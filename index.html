@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ミュージック!</title>
+<link rel="stylesheet" href="src/style.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+
+<div id="bg-layer">
+  <video id="bg-video" muted playsinline></video>
+  <div id="bg-image"></div>
+  <div id="bg-dim"></div>
+</div>
+
+<canvas id="fx"></canvas>
+
+<!-- ============ BOOT ============ -->
+<section id="screen-boot" class="screen active">
+  <div class="boot-inner">
+    <div id="logo-slot"></div>
+    <div class="boot-tag">4K MANIA &nbsp;/&nbsp; RHYTHM ACTION</div>
+    <button id="boot-start" class="big-btn">クリックしてスタート</button>
+    <div class="boot-hint">Click anywhere to enable audio</div>
+  </div>
+</section>
+
+<!-- ============ SONG SELECT ============ -->
+<section id="screen-select" class="screen">
+  <header class="topbar">
+    <div class="topbar-logo"><span class="jp">ミュージック!</span><span class="rom">MYUJIKKU</span></div>
+    <div class="topbar-right">
+      <input id="search" type="text" placeholder="曲を検索 / search…" autocomplete="off">
+      <button id="btn-import" class="ghost-btn" title="Load a .mjk beatmap from disk">＋ .mjk</button>
+      <button id="btn-settings" class="ghost-btn">⚙ 設定</button>
+    </div>
+  </header>
+
+  <div class="select-body">
+    <div class="song-panel">
+      <div id="song-list" class="song-list"></div>
+      <div id="song-empty" class="song-empty hidden">
+        <p>ビートマップが見つかりません</p>
+        <p class="sub">Drop a <code>.mjk</code> file anywhere, or run the local server so
+        <code>ミュージック！ beatmaps/</code> can be listed.</p>
+      </div>
+    </div>
+
+    <aside class="detail-panel">
+      <div id="detail-art" class="detail-art"></div>
+      <h2 id="detail-title">—</h2>
+      <div id="detail-artist" class="detail-artist"></div>
+      <div id="detail-mapper" class="detail-mapper"></div>
+      <div class="diff-head">難易度 / DIFFICULTY</div>
+      <div id="diff-list" class="diff-list"></div>
+      <div id="detail-stats" class="detail-stats"></div>
+      <div id="detail-best" class="detail-best"></div>
+      <button id="btn-play" class="big-btn" disabled>プレイ ▶</button>
+    </aside>
+  </div>
+  <div class="hint-bar">↑↓ select &nbsp;·&nbsp; ←→ difficulty &nbsp;·&nbsp; Enter play &nbsp;·&nbsp; Esc back</div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="screen-settings" class="screen">
+  <div class="panel">
+    <h2>設定 / SETTINGS</h2>
+
+    <div class="setting">
+      <label>スクロール速度 / Scroll speed<span id="v-speed"></span></label>
+      <input id="s-speed" type="range" min="5" max="40" step="1">
+    </div>
+    <div class="setting">
+      <label>オフセット / Audio offset (ms)<span id="v-offset"></span></label>
+      <input id="s-offset" type="range" min="-200" max="200" step="1">
+    </div>
+    <div class="setting">
+      <label>音量: 曲 / Music<span id="v-music"></span></label>
+      <input id="s-music" type="range" min="0" max="100" step="1">
+    </div>
+    <div class="setting">
+      <label>音量: 打音 / Hitsounds<span id="v-hit"></span></label>
+      <input id="s-hit" type="range" min="0" max="100" step="1">
+    </div>
+    <div class="setting">
+      <label>背景の暗さ / Background dim<span id="v-dim"></span></label>
+      <input id="s-dim" type="range" min="0" max="100" step="1">
+    </div>
+    <div class="setting row">
+      <label><input id="s-video" type="checkbox"> 動画背景 / Video background</label>
+      <label><input id="s-upscroll" type="checkbox"> アップスクロール / Upscroll</label>
+    </div>
+    <div class="setting row">
+      <label><input id="s-fx" type="checkbox"> エフェクト / Hit effects</label>
+      <label><input id="s-autoplay" type="checkbox"> オートプレイ / Autoplay</label>
+    </div>
+
+    <div class="setting">
+      <label>キー設定 / Key bindings</label>
+      <div id="keybinds" class="keybinds"></div>
+    </div>
+
+    <div class="panel-actions">
+      <button id="btn-settings-reset" class="ghost-btn">リセット</button>
+      <button id="btn-settings-close" class="big-btn">閉じる</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LOADING ============ -->
+<section id="screen-loading" class="screen">
+  <div class="loading-inner">
+    <div class="spinner"></div>
+    <div id="loading-text">読み込み中…</div>
+    <div class="progress"><div id="loading-bar"></div></div>
+  </div>
+</section>
+
+<!-- ============ GAME ============ -->
+<section id="screen-game" class="screen">
+  <canvas id="playfield"></canvas>
+  <div id="hud">
+    <div id="hud-score">0</div>
+    <div id="hud-acc">100.00%</div>
+    <div id="hud-info"></div>
+  </div>
+  <div id="pause-overlay" class="overlay hidden">
+    <div class="panel narrow">
+      <h2>一時停止</h2>
+      <button id="btn-resume" class="big-btn">続ける / Resume</button>
+      <button id="btn-restart" class="ghost-btn">最初から / Retry</button>
+      <button id="btn-quit" class="ghost-btn">やめる / Quit</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RESULTS ============ -->
+<section id="screen-results" class="screen">
+  <div class="results-card">
+    <div class="results-head">
+      <div>
+        <h2 id="r-title">—</h2>
+        <div id="r-sub" class="detail-artist"></div>
+      </div>
+      <div id="r-grade" class="grade">S</div>
+    </div>
+    <div id="r-score" class="r-score">0</div>
+    <div class="r-grid" id="r-grid"></div>
+    <div class="r-line"><span>精度 / Accuracy</span><b id="r-acc">100.00%</b></div>
+    <div class="r-line"><span>最大コンボ / Max combo</span><b id="r-combo">0</b></div>
+    <div class="r-line"><span>判定平均 / Mean error</span><b id="r-mean">0 ms</b></div>
+    <div id="r-newbest" class="newbest hidden">NEW BEST!</div>
+    <canvas id="r-graph" width="900" height="140"></canvas>
+    <div class="panel-actions">
+      <button id="btn-r-retry" class="ghost-btn">リトライ</button>
+      <button id="btn-r-back" class="big-btn">曲選択へ</button>
+    </div>
+  </div>
+</section>
+
+<div id="drop-hint" class="drop-hint hidden">.mjk をドロップ / Drop beatmap</div>
+<div id="toast" class="toast hidden"></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

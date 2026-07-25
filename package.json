@@ -1,0 +1,15 @@
+{
+  "name": "myujikku",
+  "version": "1.0.0",
+  "description": "ミュージック! — an anime 4K rhythm game in the spirit of osu!mania. Zero dependencies; all art and sound generated at runtime.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js --port 8123"
+  },
+  "keywords": ["rhythm-game", "mania", "osu", "canvas", "web-audio", "anime"],
+  "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=18" }
+}

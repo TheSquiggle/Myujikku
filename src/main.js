@@ -24,6 +24,8 @@ const state = {
   screen: 'boot',
 };
 
+let bootStarted = false;
+
 /* ================= screens ================= */
 
 function show(name) {
@@ -122,6 +124,10 @@ async function loadLibrary() {
   }
 
   for (const url of files) {
+    if (state.library.some(s => s.id === url)) {
+      continue;
+    }
+
     try {
       console.log(`Loading song: ${url}`);
 
@@ -130,14 +136,11 @@ async function loadLibrary() {
       });
 
       if (!res.ok) {
-        throw new Error(
-          `HTTP ${res.status}`
-        );
+        throw new Error(`HTTP ${res.status}`);
       }
 
-      const buffer = await res.arrayBuffer();
-
-      const peek = await peekBeatmap(buffer.slice(0));
+      const buf = await res.arrayBuffer();
+      const peek = await peekBeatmap(buf.slice(0));
 
       const entry = {
         id: url,
@@ -148,8 +151,7 @@ async function loadLibrary() {
           url.split('/').pop(),
 
         titleRoman:
-          peek.meta.title ||
-          '',
+          peek.meta.title || '',
 
         artist:
           peek.meta.artistUnicode ||
@@ -162,18 +164,14 @@ async function loadLibrary() {
 
         cover:
           peek.bgURL ||
-          generateCover(
-            peek.meta.title || url
-          ),
+          generateCover(peek.meta.title || url),
 
         hasVideo:
           !!peek.meta.video,
 
         length:
           Math.max(
-            ...peek.difficulties.map(
-              d => d.length
-            ),
+            ...peek.difficulties.map(d => d.length),
             0
           ),
 
@@ -185,21 +183,18 @@ async function loadLibrary() {
             hp: d.hp,
             noteCount: d.noteCount,
             length: d.length,
-            stars: d.stars
+            stars: d.stars,
           })),
 
         url,
 
-        source: 'server'
+        source: 'server',
       };
 
       state.library.push(entry);
 
     } catch (err) {
-      console.error(
-        `Failed loading ${url}`,
-        err
-      );
+      console.error(`Failed loading ${url}`, err);
     }
   }
 
@@ -209,7 +204,6 @@ async function loadLibrary() {
     $('#song-empty').classList.remove('hidden');
   }
 }
-
 function normaliseIndexEntry(e) {
   return {
     id: e.id,
@@ -690,12 +684,19 @@ function retry() {
 /* ================= boot ================= */
 
 async function boot() {
+  if (bootStarted) return;
+  bootStarted = true;
+
   initAudio();
   await resumeAudio();
+
   setMusicVolume(settings.music / 100);
   setSfxVolume(settings.hit / 100);
+
   sfxConfirm();
+
   show('select');
+
   await loadLibrary();
 }
 
@@ -706,8 +707,12 @@ function init() {
   bindDropAndImport();
   bindKeys();
 
-  $('#boot-start').addEventListener('click', boot);
-  $('#screen-boot').addEventListener('click', boot);
+$('#boot-start').addEventListener('click', e => {
+  e.stopPropagation();
+  boot();
+});
+
+$('#screen-boot').addEventListener('click', boot);
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-settings-close').addEventListener('click', closeSettings);
   $('#btn-play').addEventListener('click', startPlay);

@@ -110,15 +110,101 @@ function startAmbient() {
 /* ================= library ================= */
 
 async function loadLibrary() {
-  try {
-    const res = await fetch('api/songs', { cache: 'no-store' });
-    if (!res.ok) throw new Error(String(res.status));
-    const list = await res.json();
-    state.library = list.map(normaliseIndexEntry);
-  } catch {
-    state.library = [];
+  state.library = [];
+
+  const files = window.MYUJIKKU_FILES?.songs ?? [];
+
+  if (!files.length) {
+    console.warn("No songs found in files.js");
+    refreshList();
+    $('#song-empty').classList.remove('hidden');
+    return;
   }
+
+  for (const url of files) {
+    try {
+      console.log(`Loading song: ${url}`);
+
+      const res = await fetch(url, {
+        cache: 'no-store'
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          `HTTP ${res.status}`
+        );
+      }
+
+      const buffer = await res.arrayBuffer();
+
+      const peek = await peekBeatmap(buffer.slice(0));
+
+      const entry = {
+        id: url,
+
+        title:
+          peek.meta.titleUnicode ||
+          peek.meta.title ||
+          url.split('/').pop(),
+
+        titleRoman:
+          peek.meta.title ||
+          '',
+
+        artist:
+          peek.meta.artistUnicode ||
+          peek.meta.artist ||
+          'Unknown',
+
+        mapper:
+          peek.meta.creator ||
+          'unknown',
+
+        cover:
+          peek.bgURL ||
+          generateCover(
+            peek.meta.title || url
+          ),
+
+        hasVideo:
+          !!peek.meta.video,
+
+        length:
+          Math.max(
+            ...peek.difficulties.map(
+              d => d.length
+            ),
+            0
+          ),
+
+        difficulties:
+          peek.difficulties.map(d => ({
+            name: d.name,
+            keys: d.keys,
+            od: d.od,
+            hp: d.hp,
+            noteCount: d.noteCount,
+            length: d.length,
+            stars: d.stars
+          })),
+
+        url,
+
+        source: 'server'
+      };
+
+      state.library.push(entry);
+
+    } catch (err) {
+      console.error(
+        `Failed loading ${url}`,
+        err
+      );
+    }
+  }
+
   refreshList();
+
   if (!state.library.length) {
     $('#song-empty').classList.remove('hidden');
   }

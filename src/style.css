@@ -28,12 +28,14 @@ body{
   user-select:none;
 }
 
-/* ---------- background ---------- */
+/* ---------- background ----------
+   Explicit stack order: video sits above the static cover, so playing a
+   video beatmap doesn't leave the (always-set) cover image painted over it. */
 #bg-layer{position:fixed;inset:0;z-index:0;overflow:hidden;background:#05030c}
-#bg-image{position:absolute;inset:-2%;background-size:cover;background-position:center;filter:blur(1px) saturate(1.05);transform:scale(1.04);transition:background-image .25s}
-#bg-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
+#bg-image{position:absolute;inset:-2%;z-index:1;background-size:cover;background-position:center;filter:blur(1px) saturate(1.05);transform:scale(1.04);transition:background-image .25s}
+#bg-video{position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
 #bg-video.on{opacity:1}
-#bg-dim{position:absolute;inset:0;background:
+#bg-dim{position:absolute;inset:0;z-index:3;background:
    radial-gradient(120% 90% at 50% 0%, rgba(157,107,255,.22), transparent 60%),
    linear-gradient(180deg, rgba(5,3,12,.55), rgba(5,3,12,.82));
    backdrop-filter:saturate(1.1)}

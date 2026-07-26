@@ -19,7 +19,7 @@ const argOf = (name, def) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : def;
 };
 const PORT = Number(argOf('--port', process.env.PORT || 8080));
-const SONGS_DIR = path.resolve(ROOT, argOf('--songs', 'ミュージック！ beatmaps'));
+const SONGS_DIR = path.resolve(ROOT, argOf('--songs', 'songs'));
 const CACHE_DIR = path.join(ROOT, '.cache');
 
 /* ---------------- tiny zip reader (central directory) ---------------- */

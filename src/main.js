@@ -6,6 +6,7 @@ import {
   stopSong, sfxMove, sfxConfirm, sfxBack, sfxApplause,
 } from './audio.js';
 import { loadBeatmap, peekBeatmap, starColor, formatTime } from './chart.js';
+import { BEATMAP_REPO, listRepoBeatmaps, peekRemoteBeatmap, readCover } from './beatmaps.js';
 import { logoSVG, generateCover, JUDGE_STYLE } from './skin.js';
 import { Game, JUDGEMENTS } from './game.js';
 
@@ -111,97 +112,90 @@ function startAmbient() {
 
 /* ================= library ================= */
 
+/** Build a library entry from a chart's metadata. */
+function makeEntry(url, meta, difficulties, bgURL) {
+  return {
+    id: url,
+    title: meta.titleUnicode || meta.title || url.split('/').pop(),
+    titleRoman: meta.title || '',
+    artist: meta.artistUnicode || meta.artist || 'Unknown',
+    mapper: meta.creator || 'unknown',
+    cover: bgURL || generateCover(meta.title || url),
+    hasCover: !!bgURL,
+    hasVideo: !!meta.video,
+    length: Math.max(...difficulties.map(d => d.length), 0),
+    difficulties: difficulties.map(d => ({
+      name: d.name, keys: d.keys, od: d.od, hp: d.hp,
+      noteCount: d.noteCount, length: d.length, stars: d.stars,
+    })),
+    url,
+    source: 'server',
+  };
+}
+
 async function loadLibrary() {
   state.library = [];
 
-  const files = window.MYUJIKKU_FILES?.songs ?? [];
+  let listed = [];
+  try {
+    listed = await listRepoBeatmaps();
+  } catch (err) {
+    console.warn(`Could not reach the beatmap repository: ${err.message}`);
+    toast(`ビートマップ取得失敗 / ${err.message}`, 5000);
+  }
 
-  if (!files.length) {
-    console.warn("No songs found in files.js");
+  // Fall back to whatever files.js lists (local copies, offline play).
+  const local = (window.MYUJIKKU_FILES?.songs ?? []).map(url => ({ url, name: url.split('/').pop() }));
+  const sources = listed.length ? listed : local;
+
+  if (!sources.length) {
     refreshList();
     $('#song-empty').classList.remove('hidden');
     return;
   }
 
-  for (const url of files) {
-    if (state.library.some(s => s.id === url)) {
-      continue;
-    }
-
+  // Read each chart's metadata over range requests — a few hundred KB each
+  // rather than the whole archive. Without a known size (the files.js fallback)
+  // there is nothing to range against, so read the file the plain way.
+  const pending = [];
+  for (const item of sources) {
+    if (state.library.some(s => s.id === item.url)) continue;
     try {
-      console.log(`Loading song: ${url}`);
-
-      const res = await fetch(url, {
-        cache: 'no-store'
-      });
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+      if (item.bytes) {
+        const peek = await peekRemoteBeatmap(item.url, { size: item.bytes });
+        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, null));
+        pending.push({ entry: state.library[state.library.length - 1], zip: peek.zip, meta: peek.meta });
+      } else {
+        const res = await fetch(item.url, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const peek = await peekBeatmap(await res.arrayBuffer());
+        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, peek.bgURL));
       }
-
-      const buf = await res.arrayBuffer();
-      const peek = await peekBeatmap(buf.slice(0));
-
-      const entry = {
-        id: url,
-
-        title:
-          peek.meta.titleUnicode ||
-          peek.meta.title ||
-          url.split('/').pop(),
-
-        titleRoman:
-          peek.meta.title || '',
-
-        artist:
-          peek.meta.artistUnicode ||
-          peek.meta.artist ||
-          'Unknown',
-
-        mapper:
-          peek.meta.creator ||
-          'unknown',
-
-        cover:
-          peek.bgURL ||
-          generateCover(peek.meta.title || url),
-
-        hasVideo:
-          !!peek.meta.video,
-
-        length:
-          Math.max(
-            ...peek.difficulties.map(d => d.length),
-            0
-          ),
-
-        difficulties:
-          peek.difficulties.map(d => ({
-            name: d.name,
-            keys: d.keys,
-            od: d.od,
-            hp: d.hp,
-            noteCount: d.noteCount,
-            length: d.length,
-            stars: d.stars,
-          })),
-
-        url,
-
-        source: 'server',
-      };
-
-      state.library.push(entry);
-
+      refreshList();
     } catch (err) {
-      console.error(`Failed loading ${url}`, err);
+      console.error(`Failed loading ${item.url}`, err);
     }
   }
 
   refreshList();
+  if (!state.library.length) $('#song-empty').classList.remove('hidden');
 
-  if (!state.library.length) {
-    $('#song-empty').classList.remove('hidden');
+  // Cover art is the heaviest part of the metadata, so fetch it after the list
+  // is already usable and swap each one in as it lands.
+  for (const { entry, zip, meta } of pending) {
+    try {
+      const bgURL = await readCover(zip, meta);
+      if (!bgURL) continue;
+      entry.cover = bgURL;
+      entry.hasCover = true;
+      refreshList();
+      if (state.filtered[state.songIndex]?.id === entry.id) {
+        $('#detail-art').style.backgroundImage = `url('${bgURL}')`;
+        setBackground({ image: bgURL });
+      }
+    } catch (err) {
+      console.warn(`Cover unavailable for ${entry.title}`, err);
+    }
   }
 }
 function normaliseIndexEntry(e) {

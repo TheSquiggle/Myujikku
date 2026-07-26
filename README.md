@@ -24,6 +24,7 @@
 - 🟢 Hold notes, HP drain, combo, grading, and score calculation
 - 📊 Full results screen with accuracy breakdown
 - ⭐ Automatic star rating generation
+- 🌐 Beatmaps streamed from a **separate repository** — no downloads to host here
 - 📦 Drag-and-drop `.mjk` beatmaps
 - 🎨 Every graphic is procedurally rendered at runtime
 - 🔊 Every sound effect is synthesized using the Web Audio API
@@ -71,34 +72,76 @@ Then visit:
 http://localhost:8080
 ```
 
-### Custom port / beatmap folder
+Beatmaps are fetched from the [beatmap repository](#-beatmap-library), so there's
+nothing to place locally first.
+
+### Custom port / local beatmap folder
 
 ```bash
 node server.js --port 9000 --songs "path/to/beatmaps"
 ```
 
+The server is only a static host plus an optional local index — the game itself
+runs perfectly well from any static host.
+
 ---
 
 ## 📚 Beatmap Library
 
-The server automatically:
+Beatmaps live in their own repository so this one stays small and the game can be
+hosted anywhere static:
 
-- indexes every `.mjk` archive
-- extracts metadata
-- caches background artwork into `.cache/`
-- exposes the library through:
+### 👉 [TheSquiggle/myujikku-beatmaps](https://github.com/TheSquiggle/myujikku-beatmaps)
 
+The song list is built at runtime from that repository's file listing. Every
+`.mjk` file is picked up automatically; anything else — the repository's own
+`README.md`, for instance — is ignored. **Adding a beatmap is just committing a
+`.mjk` to that repo.** No rebuild, no redeploy, nothing to change here.
+
+### Reading charts without downloading them
+
+A `.mjk` is mostly audio and video, but the song list only needs `chart.mjc` and
+the cover. Since a ZIP keeps its index at the *end* of the file, the game uses
+**HTTP range requests** to read just the directory and pull out the two entries
+it wants.
+
+| | Transferred |
+|---|---|
+| Whole archives | 33.6 MB |
+| Charts only *(list is usable here)* | ~236 KB |
+| Charts + cover art | ~1.6 MB |
+
+Cover art loads after the list is already on screen and fades in as it arrives.
+The full archive is downloaded only when you press **Play**.
+
+### Pointing at a different repository
+
+Edit `BEATMAP_REPO` at the top of `src/beatmaps.js`:
+
+```js
+export const BEATMAP_REPO = {
+  owner: 'TheSquiggle',
+  name: 'myujikku-beatmaps',
+  branch: 'main',
+  path: '',        // subfolder within the repo, '' for the root
+};
 ```
-GET /api/songs
+
+### Offline / local beatmaps
+
+If the repository can't be reached, the game falls back to whatever `files.js`
+lists — regenerate it after dropping `.mjk` files into `songs/`:
+
+```bash
+python generate_files.py
 ```
 
-After adding new beatmaps simply reload:
+You can also skip everything and open `index.html` directly, then drag a `.mjk`
+archive into the window.
 
-```
-GET /api/reload
-```
-
-You can also skip the server entirely by opening `index.html` directly and dragging a `.mjk` archive into the window.
+> **Note:** GitHub's unauthenticated API allows 60 listing requests per hour per
+> IP. That's one request per page load, so it only matters if you're reloading
+> constantly — and the `files.js` fallback covers you if you hit it.
 
 ---
 
@@ -250,16 +293,19 @@ allowing beatmaps to be indexed without loading the audio.
 ```
 .
 ├── index.html          # Application entry point
-├── server.js           # Static server + beatmap indexing
+├── server.js           # Static server + optional local beatmap indexing
+├── files.js            # Generated offline beatmap list (fallback)
+├── generate_files.py   # Regenerates files.js from songs/
 ├── src/
 │   ├── audio.js        # Audio engine + synthesized SFX
+│   ├── beatmaps.js     # Remote beatmap repository + ranged metadata reads
 │   ├── chart.js        # Beatmap loading + star rating
 │   ├── game.js         # Gameplay engine
 │   ├── main.js         # Menus, library, settings
 │   ├── skin.js         # Procedural graphics
 │   ├── store.js        # Settings + local records
 │   ├── style.css       # Entire UI
-│   └── zip.js          # ZIP reader using DecompressionStream
+│   └── zip.js          # ZIP reader (whole-file and ranged) via DecompressionStream
 ```
 
 ---
@@ -294,7 +340,7 @@ A two-second silent lead-in is synchronized using `performance.now()` before aud
 
 # ❤️ Credits
 
-Beatmaps inside **`ミュージック！ beatmaps/`** were converted from community osu! mapsets.
+Beatmaps hosted in [**TheSquiggle/myujikku-beatmaps**](https://github.com/TheSquiggle/myujikku-beatmaps) were converted from community osu! mapsets.
 
 All music, artwork, and chart credits belong to their original creators and are preserved inside each beatmap's `meta` block.
 

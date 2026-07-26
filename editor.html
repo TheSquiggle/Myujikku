@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ミュージック! エディター</title>
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/editor.css">
+<link rel="icon" href="data:,">
+</head>
+<body class="editor-body">
+
+<header class="ed-top">
+  <div class="topbar-logo">
+    <span class="jp">ミュージック!</span>
+    <span class="rom">EDITOR</span>
+  </div>
+
+  <div class="ed-file-ops">
+    <button id="ed-new" class="ghost-btn">新規 / New</button>
+    <button id="ed-open" class="ghost-btn">開く / Open .mjk</button>
+    <button id="ed-import" class="ghost-btn">.osz 変換 / Import</button>
+    <button id="ed-save" class="ghost-btn">保存 / Save .mjk</button>
+    <a class="ghost-btn" href="index.html">▶ ゲームへ</a>
+  </div>
+</header>
+
+<main class="ed-main">
+  <!-- ---------- left rail ---------- -->
+  <aside class="ed-rail">
+    <section class="ed-box">
+      <h3>楽曲情報 / SONG</h3>
+      <label>Title<input id="m-title" type="text"></label>
+      <label>Title (unicode)<input id="m-titleU" type="text"></label>
+      <label>Artist<input id="m-artist" type="text"></label>
+      <label>Artist (unicode)<input id="m-artistU" type="text"></label>
+      <label>Creator<input id="m-creator" type="text"></label>
+      <label>Tags<input id="m-tags" type="text"></label>
+    </section>
+
+    <section class="ed-box">
+      <h3>メディア / MEDIA</h3>
+      <div class="ed-media-row"><span>Audio</span><b id="media-audio">—</b><button data-media="audio" class="mini-btn">差替</button></div>
+      <div class="ed-media-row"><span>Background</span><b id="media-bg">—</b><button data-media="background" class="mini-btn">差替</button></div>
+      <div class="ed-media-row"><span>Video</span><b id="media-video">—</b><button data-media="video" class="mini-btn">差替</button></div>
+      <label>Video offset (ms)<input id="m-videoOffset" type="number" step="1" value="0"></label>
+    </section>
+
+    <section class="ed-box">
+      <h3>難易度 / DIFFICULTIES</h3>
+      <div id="ed-diffs" class="ed-diffs"></div>
+      <div class="ed-row">
+        <button id="diff-add" class="mini-btn">＋ 追加</button>
+        <button id="diff-dup" class="mini-btn">複製</button>
+        <button id="diff-ren" class="mini-btn">名前</button>
+        <button id="diff-del" class="mini-btn danger">削除</button>
+      </div>
+      <label>OD <span id="v-od" class="val"></span><input id="d-od" type="range" min="0" max="10" step="0.1"></label>
+      <label>HP <span id="v-hp" class="val"></span><input id="d-hp" type="range" min="0" max="10" step="0.1"></label>
+      <div class="ed-stat" id="d-stats"></div>
+    </section>
+
+    <section class="ed-box">
+      <h3>タイミング / TIMING</h3>
+      <label>BPM<input id="t-bpm" type="number" step="0.001" value="120"></label>
+      <label>Offset (ms)<input id="t-offset" type="number" step="1" value="0"></label>
+      <div class="ed-row">
+        <button id="t-tap" class="mini-btn">タップでBPM</button>
+        <button id="t-here" class="mini-btn">現在位置をOffsetに</button>
+      </div>
+      <div class="ed-stat" id="t-taphint">tap ≥4 beats to estimate</div>
+    </section>
+
+    <section class="ed-box">
+      <h3>ヘルプ / KEYS</h3>
+      <div class="ed-help">
+        <div><kbd>Space</kbd> play / pause</div>
+        <div><kbd>1</kbd>–<kbd>4</kbd> place note at playhead</div>
+        <div>click lane = tap · drag = hold</div>
+        <div>right-click / <kbd>Del</kbd> = remove</div>
+        <div>drag note body = move · tail = resize</div>
+        <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> undo / redo</div>
+        <div><kbd>Ctrl</kbd>+<kbd>A</kbd> select all · <kbd>M</kbd> mirror</div>
+        <div><kbd>↑</kbd><kbd>↓</kbd> scroll · <kbd>Ctrl</kbd>+wheel zoom</div>
+        <div><kbd>Home</kbd> / <kbd>End</kbd> jump</div>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ---------- canvas ---------- -->
+  <section class="ed-stage">
+    <canvas id="ed-canvas"></canvas>
+    <div id="ed-empty" class="ed-empty">
+      <h2>チャートがありません</h2>
+      <p>Open a <code>.mjk</code>, import an <code>.osz</code>, or start a new chart from an audio file.</p>
+      <div class="ed-row center">
+        <button id="empty-open" class="big-btn">開く / Open .mjk</button>
+        <button id="empty-import" class="ghost-btn">.osz を変換</button>
+        <button id="empty-new" class="ghost-btn">新規 / New</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ---------- transport ---------- -->
+<footer class="ed-transport">
+  <button id="tr-play" class="play-btn">▶</button>
+  <span id="tr-time" class="tr-time">0:00.000</span>
+  <input id="tr-seek" type="range" min="0" max="1000" value="0" step="1">
+  <label class="tr-field">Snap
+    <select id="tr-snap">
+      <option value="1">1/1</option>
+      <option value="2">1/2</option>
+      <option value="3">1/3</option>
+      <option value="4" selected>1/4</option>
+      <option value="6">1/6</option>
+      <option value="8">1/8</option>
+      <option value="12">1/12</option>
+      <option value="16">1/16</option>
+      <option value="0">off</option>
+    </select>
+  </label>
+  <label class="tr-field">Rate
+    <select id="tr-rate">
+      <option value="0.25">25%</option>
+      <option value="0.5">50%</option>
+      <option value="0.75">75%</option>
+      <option value="1" selected>100%</option>
+    </select>
+  </label>
+  <label class="tr-field">Zoom<input id="tr-zoom" type="range" min="10" max="220" step="1" value="60"></label>
+  <label class="tr-field">Vol<input id="tr-vol" type="range" min="0" max="100" step="1" value="70"></label>
+  <label class="tr-check"><input id="tr-hitsound" type="checkbox" checked>打音</label>
+  <span id="tr-status" class="tr-status"></span>
+</footer>
+
+<!-- ---------- modal ---------- -->
+<div id="ed-modal" class="ed-modal hidden">
+  <div class="panel" id="ed-modal-panel"></div>
+</div>
+
+<div id="ed-toast" class="toast hidden"></div>
+<div id="ed-drop" class="drop-hint hidden">.mjk / .osz / 音源をドロップ</div>
+
+<script type="module" src="src/editor.js"></script>
+</body>
+</html>

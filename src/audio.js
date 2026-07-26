@@ -9,6 +9,7 @@ export const audio = {
   source: null,
   _startCtxTime: 0,
   _startOffset: 0,
+  _rate: 1,
   playing: false,
   _hitBuf: null,
   _clapBuf: null,
@@ -41,17 +42,22 @@ export async function decodeSong(arrayBuffer) {
   return audio.buffer;
 }
 
-/** Start (or restart) the song from `offsetMs` into the track. */
-export function playSong(offsetMs = 0) {
+/**
+ * Start (or restart) the song from `offsetMs` into the track.
+ * `rate` slows playback down for editor scrubbing (pitch shifts with it).
+ */
+export function playSong(offsetMs = 0, rate = 1) {
   stopSong();
   const src = audio.ctx.createBufferSource();
   src.buffer = audio.buffer;
+  src.playbackRate.value = rate;
   src.connect(audio.musicGain);
   const off = Math.max(0, offsetMs / 1000);
   src.start(0, off);
   audio.source = src;
   audio._startCtxTime = audio.ctx.currentTime;
   audio._startOffset = off;
+  audio._rate = rate;
   audio.playing = true;
 }
 
@@ -68,7 +74,8 @@ export function stopSong() {
 export function songTime() {
   if (!audio.ctx) return 0;
   if (!audio.playing) return audio._startOffset * 1000;
-  return (audio.ctx.currentTime - audio._startCtxTime + audio._startOffset) * 1000;
+  const elapsed = (audio.ctx.currentTime - audio._startCtxTime) * (audio._rate || 1);
+  return (elapsed + audio._startOffset) * 1000;
 }
 
 export function songDuration() { return audio.buffer ? audio.buffer.duration * 1000 : 0; }

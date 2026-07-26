@@ -425,21 +425,41 @@ function launchGame(song, diff) {
   $('#pause-overlay').classList.add('hidden');
 
   const vid = $('#bg-video');
-  const syncVideo = () => {
-    if (state.beatmap?.videoURL && settings.video) { vid.currentTime = 0; vid.play().catch(() => {}); }
-  };
+  vid.loop = false;                       // the chart drives the video during play
 
   const game = new Game($('#playfield'), state.beatmap, diff, {
     onPause: () => { game.pause(); vid.pause(); $('#pause-overlay').classList.remove('hidden'); },
-    onResume: () => { $('#pause-overlay').classList.add('hidden'); game.resume(); if (settings.video) vid.play().catch(() => {}); },
+    onResume: () => { $('#pause-overlay').classList.add('hidden'); game.resume(); },
     onRestart: () => { launchGame(song, diff); },
     onEnd: (result) => finishGame(song, diff, result),
   });
   state.game = game;
-  state.hud = setInterval(() => updateHUD(game), 60);
+  state.hud = setInterval(() => { updateHUD(game); syncVideo(game); }, 60);
   game.start();
-  syncVideo();
   $('#hud-info').textContent = `${song.title} — ${diff.name}${settings.autoplay ? ' · AUTOPLAY' : ''}`;
+}
+
+/**
+ * Keep the background video locked to the song clock.
+ * `meta.videoOffset` is the song time at which the video's first frame belongs,
+ * so the video's own timeline is (songTime − videoOffset).
+ */
+function syncVideo(game) {
+  const vid = $('#bg-video');
+  if (!state.beatmap?.videoURL || !settings.video) return;
+  if (game.paused || !game.running) { if (!vid.paused) vid.pause(); return; }
+
+  const target = (game._t - (state.beatmap.meta?.videoOffset || 0)) / 1000;
+  if (target < 0 || (vid.duration && target > vid.duration)) {
+    if (!vid.paused) vid.pause();
+    return;
+  }
+  if (vid.paused) {
+    vid.currentTime = target;
+    vid.play().catch(() => {});
+  } else if (Math.abs(vid.currentTime - target) > 0.18 && vid.readyState >= 2) {
+    vid.currentTime = target;             // drifted (seek, lag spike) — snap back
+  }
 }
 
 function updateHUD(game) {

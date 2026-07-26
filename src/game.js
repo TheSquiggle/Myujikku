@@ -111,6 +111,9 @@ export class Game {
     if (this.paused || !this.running) return;
     this.paused = true;
     this._pausedAt = this._t;
+    // Forget which keys were down: the keyup usually never arrives while paused,
+    // and a lane stuck "pressed" would swallow every note in it after resuming.
+    this.pressed.fill(false);
     stopSong();
   }
 

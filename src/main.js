@@ -52,12 +52,22 @@ function setBackground({ image, video } = {}) {
   if (video && settings.video) {
     if (vid.src !== video) { vid.src = video; vid.loop = true; }
     vid.classList.add('on');
-    vid.play().catch(() => {});
+    vid.play().catch(err => warnVideoFailure(err.message));
   } else {
     vid.classList.remove('on');
     vid.pause();
   }
   applyDim();
+}
+
+let videoWarned = false;
+
+/** Surface a video failure once instead of silently showing the static cover. */
+function warnVideoFailure(detail) {
+  if (videoWarned) return;
+  videoWarned = true;
+  console.warn(`[video] playback failed: ${detail}`);
+  toast(`動画再生に失敗 / video playback failed — falling back to the cover image (${detail})`, 6000);
 }
 
 function applyDim() {
@@ -803,6 +813,13 @@ $('#screen-boot').addEventListener('click', boot);
   $('#btn-r-back').addEventListener('click', backToSelect);
 
   applyDim();
+
+  // The play() promise only catches *rejection*; a codec the browser can't
+  // decode at all fires this event instead, with play() never settling.
+  $('#bg-video').addEventListener('error', e => {
+    const codes = { 1: 'aborted', 2: 'network error', 3: 'decode error — codec unsupported?', 4: 'source not supported' };
+    warnVideoFailure(codes[e.target.error?.code] || 'unknown error');
+  });
 
   // Debug handle — handy for tuning and automated smoke tests.
   window.MJK = { state, settings, audio, startPlay, show };

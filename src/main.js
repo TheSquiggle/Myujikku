@@ -7,7 +7,7 @@ import {
 } from './audio.js';
 import { loadBeatmap, peekBeatmap, starColor, formatTime } from './chart.js';
 import { BEATMAP_REPO, listRepoBeatmaps, peekRemoteBeatmap } from './beatmaps.js';
-import { getMeta, putMeta, getBlob, putBlob, cacheSize, clearCache } from './cache.js';
+import { getMeta, putMeta, flushMeta, getBlob, putBlob, cacheSize, clearCache } from './cache.js';
 import { logoSVG, generateCover, JUDGE_STYLE } from './skin.js';
 import { Game, JUDGEMENTS } from './game.js';
 
@@ -146,6 +146,38 @@ function makeEntry(url, meta, difficulties, bgURL, bytes = 0) {
   };
 }
 
+// Concurrent, bounded worker pool — lets hundreds of beatmaps' metadata load in
+// parallel instead of one round-trip at a time, without opening unbounded
+// connections. raw.githubusercontent.com is a real CDN, so this is safe.
+async function pool(items, limit, worker) {
+  let i = 0;
+  async function next() {
+    while (i < items.length) {
+      const item = items[i++];
+      try { await worker(item); } catch (err) { console.error(err); }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next));
+}
+
+// Rebuilding the whole song list is O(n) — fine once, ruinous if called after
+// every single completion in a pool of hundreds. Coalesce bursts into at most
+// one render every 150ms, plus a final one when the caller is done.
+function throttled(fn, ms) {
+  let last = 0, timer = null;
+  const call = () => { last = Date.now(); clearTimeout(timer); timer = null; fn(); };
+  const trigger = () => {
+    const wait = ms - (Date.now() - last);
+    if (wait <= 0) call();
+    else if (!timer) timer = setTimeout(call, wait);
+  };
+  trigger.flush = () => { clearTimeout(timer); timer = null; fn(); };
+  return trigger;
+}
+
+const METADATA_CONCURRENCY = 8;
+const COVER_CONCURRENCY = 6;
+
 async function loadLibrary() {
   state.library = [];
 
@@ -167,55 +199,63 @@ async function loadLibrary() {
     return;
   }
 
-  // Metadata is cached across visits, so a return trip renders the list with no
-  // network at all. Anything new is read over range requests — a few hundred KB
-  // each rather than the whole archive. Without a known size (the files.js
-  // fallback) there is nothing to range against, so read the file plainly.
-  const pending = [];
+  const seen = new Set();
+  const renderSoon = throttled(refreshList, 150);
+
+  // Cached beatmaps render with zero network at all — do them first, as one
+  // batch, so a return visit shows the full list instantly.
+  const uncached = [];
   for (const item of sources) {
-    if (state.library.some(s => s.id === item.url)) continue;
-    try {
-      const cached = getMeta(item.url, item.bytes);
-      if (cached) {
-        state.library.push(makeEntry(item.url, cached.meta, cached.difficulties, null, item.bytes));
-        pending.push({ entry: state.library[state.library.length - 1], item });
-      } else if (item.bytes) {
-        const peek = await peekRemoteBeatmap(item.url, { size: item.bytes });
-        putMeta(item.url, item.bytes, { meta: peek.meta, difficulties: peek.difficulties });
-        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, null, item.bytes));
-        pending.push({ entry: state.library[state.library.length - 1], item, zip: peek.zip });
-      } else {
-        const res = await fetch(item.url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const peek = await peekBeatmap(await res.arrayBuffer());
-        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, peek.bgURL, item.bytes));
-      }
-      refreshList();
-    } catch (err) {
-      console.error(`Failed loading ${item.url}`, err);
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+    const cached = getMeta(item.url, item.bytes);
+    if (cached) {
+      state.library.push(makeEntry(item.url, cached.meta, cached.difficulties, null, item.bytes));
+    } else {
+      uncached.push(item);
     }
   }
-
   refreshList();
+  if (!state.library.length && !uncached.length) $('#song-empty').classList.remove('hidden');
+
+  // Metadata is read over range requests — a few hundred KB each rather than
+  // the whole archive — and fetched METADATA_CONCURRENCY at a time. Without a
+  // known size (the files.js fallback) there's nothing to range against.
+  const pending = [];
+  await pool(uncached, METADATA_CONCURRENCY, async item => {
+    if (item.bytes) {
+      const peek = await peekRemoteBeatmap(item.url, { size: item.bytes });
+      putMeta(item.url, item.bytes, { meta: peek.meta, difficulties: peek.difficulties });
+      const entry = makeEntry(item.url, peek.meta, peek.difficulties, null, item.bytes);
+      state.library.push(entry);
+      pending.push({ entry, item, zip: peek.zip });
+    } else {
+      const res = await fetch(item.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const peek = await peekBeatmap(await res.arrayBuffer());
+      state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, peek.bgURL, item.bytes));
+    }
+    renderSoon();
+  });
+  renderSoon.flush();
+  flushMeta();
   if (!state.library.length) $('#song-empty').classList.remove('hidden');
 
   // Cover art is the heaviest part of the metadata, so it loads after the list
-  // is already usable, and is cached so it only ever downloads once.
-  for (const { entry, item, zip } of pending) {
-    try {
-      const bgURL = await loadCover(entry, item, zip);
-      if (!bgURL) continue;
-      entry.cover = bgURL;
-      entry.hasCover = true;
-      refreshList();
-      if (state.filtered[state.songIndex]?.id === entry.id) {
-        $('#detail-art').style.backgroundImage = `url('${bgURL}')`;
-        setBackground({ image: bgURL });
-      }
-    } catch (err) {
-      console.warn(`Cover unavailable for ${entry.title}`, err);
+  // is already usable, is pooled the same way, and is cached so it only ever
+  // downloads once.
+  await pool(pending, COVER_CONCURRENCY, async ({ entry, item, zip }) => {
+    const bgURL = await loadCover(entry, item, zip);
+    if (!bgURL) return;
+    entry.cover = bgURL;
+    entry.hasCover = true;
+    renderSoon();
+    if (state.filtered[state.songIndex]?.id === entry.id) {
+      $('#detail-art').style.backgroundImage = `url('${bgURL}')`;
+      setBackground({ image: bgURL });
     }
-  }
+  });
+  renderSoon.flush();
 }
 
 /** Cover art: from cache when we have it, otherwise read out of the archive. */

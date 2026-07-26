@@ -10,40 +10,63 @@
 const META_KEY = 'myujikku.meta.v1';
 const CACHE_NAME = 'myujikku-beatmaps-v1';
 const MAX_ARCHIVES = 12;              // keep the newest N; evict the rest
+const MAX_META = 2000;                // metadata is tiny — fine to keep a lot of it
 
 const hasCacheApi = typeof caches !== 'undefined' && typeof window !== 'undefined' && window.isSecureContext;
 
-/* ---------------- metadata (localStorage) ---------------- */
+/* ---------------- metadata (localStorage) ----------------
+   Loading a library of hundreds of beatmaps calls getMeta/putMeta once per
+   beatmap. Re-parsing and re-serialising the whole store on every single call
+   would be O(n^2) at that scale, so the parsed store is kept in memory for the
+   life of the page and writes are batched instead of going out immediately. */
 
-function readMetaStore() {
-  try { return JSON.parse(localStorage.getItem(META_KEY) || '{}'); }
-  catch { return {}; }
+let memStore = null;
+let dirty = false;
+let flushTimer = null;
+
+function store() {
+  if (memStore) return memStore;
+  try { memStore = JSON.parse(localStorage.getItem(META_KEY) || '{}'); }
+  catch { memStore = {}; }
+  return memStore;
 }
 
-function writeMetaStore(store) {
-  try { localStorage.setItem(META_KEY, JSON.stringify(store)); }
+function scheduleFlush() {
+  dirty = true;
+  if (flushTimer) return;
+  flushTimer = setTimeout(flushMeta, 500);
+}
+
+/** Force any pending metadata writes out immediately (e.g. before navigating away). */
+export function flushMeta() {
+  clearTimeout(flushTimer);
+  flushTimer = null;
+  if (!dirty || !memStore) return;
+  dirty = false;
+  try { localStorage.setItem(META_KEY, JSON.stringify(memStore)); }
   catch { /* quota or disabled — caching is optional */ }
 }
+
+if (typeof addEventListener === 'function') addEventListener('pagehide', flushMeta);
 
 const metaKey = (url, bytes) => `${url}|${bytes || 0}`;
 
 /** Cached chart metadata for a beatmap, or null. */
 export function getMeta(url, bytes) {
-  const hit = readMetaStore()[metaKey(url, bytes)];
+  const hit = store()[metaKey(url, bytes)];
   return hit ? hit.value : null;
 }
 
 export function putMeta(url, bytes, value) {
-  const store = readMetaStore();
-  store[metaKey(url, bytes)] = { at: Date.now(), value };
+  const s = store();
+  s[metaKey(url, bytes)] = { at: Date.now(), value };
 
-  // Drop entries for beatmaps that are no longer around.
-  const keys = Object.keys(store);
-  if (keys.length > 60) {
-    keys.sort((a, b) => store[a].at - store[b].at);
-    for (const k of keys.slice(0, keys.length - 60)) delete store[k];
+  const keys = Object.keys(s);
+  if (keys.length > MAX_META) {
+    keys.sort((a, b) => s[a].at - s[b].at);
+    for (const k of keys.slice(0, keys.length - MAX_META)) delete s[k];
   }
-  writeMetaStore(store);
+  scheduleFlush();
 }
 
 /* ---------------- binaries (Cache API) ---------------- */
@@ -123,6 +146,10 @@ export async function cacheSize() {
 }
 
 export async function clearCache() {
+  clearTimeout(flushTimer);
+  flushTimer = null;
+  dirty = false;
+  memStore = {};
   try { localStorage.removeItem(META_KEY); } catch { /* ignore */ }
   if (!hasCacheApi) return;
   try { await caches.delete(CACHE_NAME); } catch { /* ignore */ }

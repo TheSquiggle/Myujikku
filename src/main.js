@@ -6,7 +6,8 @@ import {
   stopSong, sfxMove, sfxConfirm, sfxBack, sfxApplause,
 } from './audio.js';
 import { loadBeatmap, peekBeatmap, starColor, formatTime } from './chart.js';
-import { BEATMAP_REPO, listRepoBeatmaps, peekRemoteBeatmap, readCover } from './beatmaps.js';
+import { BEATMAP_REPO, listRepoBeatmaps, peekRemoteBeatmap } from './beatmaps.js';
+import { getMeta, putMeta, getBlob, putBlob, cacheSize, clearCache } from './cache.js';
 import { logoSVG, generateCover, JUDGE_STYLE } from './skin.js';
 import { Game, JUDGEMENTS } from './game.js';
 
@@ -113,9 +114,11 @@ function startAmbient() {
 /* ================= library ================= */
 
 /** Build a library entry from a chart's metadata. */
-function makeEntry(url, meta, difficulties, bgURL) {
+function makeEntry(url, meta, difficulties, bgURL, bytes = 0) {
   return {
     id: url,
+    bytes,
+    backgroundName: meta.background || 'BG.jpg',
     title: meta.titleUnicode || meta.title || url.split('/').pop(),
     titleRoman: meta.title || '',
     artist: meta.artistUnicode || meta.artist || 'Unknown',
@@ -154,22 +157,28 @@ async function loadLibrary() {
     return;
   }
 
-  // Read each chart's metadata over range requests — a few hundred KB each
-  // rather than the whole archive. Without a known size (the files.js fallback)
-  // there is nothing to range against, so read the file the plain way.
+  // Metadata is cached across visits, so a return trip renders the list with no
+  // network at all. Anything new is read over range requests — a few hundred KB
+  // each rather than the whole archive. Without a known size (the files.js
+  // fallback) there is nothing to range against, so read the file plainly.
   const pending = [];
   for (const item of sources) {
     if (state.library.some(s => s.id === item.url)) continue;
     try {
-      if (item.bytes) {
+      const cached = getMeta(item.url, item.bytes);
+      if (cached) {
+        state.library.push(makeEntry(item.url, cached.meta, cached.difficulties, null, item.bytes));
+        pending.push({ entry: state.library[state.library.length - 1], item });
+      } else if (item.bytes) {
         const peek = await peekRemoteBeatmap(item.url, { size: item.bytes });
-        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, null));
-        pending.push({ entry: state.library[state.library.length - 1], zip: peek.zip, meta: peek.meta });
+        putMeta(item.url, item.bytes, { meta: peek.meta, difficulties: peek.difficulties });
+        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, null, item.bytes));
+        pending.push({ entry: state.library[state.library.length - 1], item, zip: peek.zip });
       } else {
-        const res = await fetch(item.url, { cache: 'no-store' });
+        const res = await fetch(item.url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const peek = await peekBeatmap(await res.arrayBuffer());
-        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, peek.bgURL));
+        state.library.push(makeEntry(item.url, peek.meta, peek.difficulties, peek.bgURL, item.bytes));
       }
       refreshList();
     } catch (err) {
@@ -180,11 +189,11 @@ async function loadLibrary() {
   refreshList();
   if (!state.library.length) $('#song-empty').classList.remove('hidden');
 
-  // Cover art is the heaviest part of the metadata, so fetch it after the list
-  // is already usable and swap each one in as it lands.
-  for (const { entry, zip, meta } of pending) {
+  // Cover art is the heaviest part of the metadata, so it loads after the list
+  // is already usable, and is cached so it only ever downloads once.
+  for (const { entry, item, zip } of pending) {
     try {
-      const bgURL = await readCover(zip, meta);
+      const bgURL = await loadCover(entry, item, zip);
       if (!bgURL) continue;
       entry.cover = bgURL;
       entry.hasCover = true;
@@ -197,6 +206,32 @@ async function loadLibrary() {
       console.warn(`Cover unavailable for ${entry.title}`, err);
     }
   }
+}
+
+/** Cover art: from cache when we have it, otherwise read out of the archive. */
+async function loadCover(entry, item, zip) {
+  const cachedCover = await getBlob('cover', item.url, item.bytes);
+  if (cachedCover) return URL.createObjectURL(new Blob([cachedCover], { type: 'image/jpeg' }));
+
+  // A cached archive already holds the artwork — no need to go back to the network.
+  const cachedArchive = await getBlob('archive', item.url, item.bytes);
+  if (cachedArchive) {
+    const peek = await peekBeatmap(cachedArchive.slice(0));
+    return peek.bgURL;
+  }
+
+  if (!zip) {
+    if (!item.bytes) return null;
+    const peek = await peekRemoteBeatmap(item.url, { size: item.bytes });
+    zip = peek.zip;
+  }
+
+  const name = [entry.backgroundName, 'BG.jpg', 'bg.jpg'].find(n => n && zip.entries.has(n));
+  if (!name) return null;
+  const bytes = await zip.read(name);
+  if (!bytes) return null;
+  await putBlob('cover', item.url, item.bytes, bytes, 'image/jpeg');
+  return URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
 }
 function normaliseIndexEntry(e) {
   return {
@@ -310,25 +345,40 @@ function renderDiffs() {
 
 async function fetchBeatmapBuffer(song, onProgress) {
   if (song.source === 'local') return song.buffer;
+
+  // Already downloaded once? Play straight from the cache.
+  const cached = await getBlob('archive', song.url, song.bytes);
+  if (cached) {
+    onProgress(0.85, 'キャッシュから読み込み / from cache');
+    return cached;
+  }
+
   const res = await fetch(song.url);
   if (!res.ok) throw new Error(`Failed to fetch beatmap (${res.status})`);
   const total = Number(res.headers.get('content-length')) || 0;
-  if (!res.body || !total) return await res.arrayBuffer();
 
-  const reader = res.body.getReader();
-  const chunks = [];
-  let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    got += value.length;
-    onProgress(Math.min(0.85, got / total * 0.85), `ダウンロード中… ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`);
+  let buffer;
+  if (!res.body || !total) {
+    buffer = await res.arrayBuffer();
+  } else {
+    const reader = res.body.getReader();
+    const chunks = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      got += value.length;
+      onProgress(Math.min(0.85, got / total * 0.85), `ダウンロード中… ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`);
+    }
+    const out = new Uint8Array(got);
+    let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.length; }
+    buffer = out.buffer;
   }
-  const out = new Uint8Array(got);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out.buffer;
+
+  await putBlob('archive', song.url, song.bytes, buffer, 'application/zip');
+  return buffer;
 }
 
 async function startPlay() {
@@ -523,6 +573,13 @@ function bindSettings() {
     });
   }
   $('#btn-settings-reset').addEventListener('click', () => { resetSettings(); sync(); toast('設定をリセットしました'); });
+
+  $('#btn-cache-clear').addEventListener('click', async () => {
+    await clearCache();
+    state.loadedId = null;
+    await refreshCacheReadout();
+    toast('キャッシュを削除しました / cache cleared');
+  });
   sync();
   settingsSync = sync;
 }
@@ -655,7 +712,14 @@ function bindKeys() {
   });
 }
 
-function openSettings() { show('settings'); settingsSync(); sfxMove(); }
+async function refreshCacheReadout() {
+  const { bytes, count, available } = await cacheSize();
+  $('#v-cache').textContent = available
+    ? `${count} 件 / ${(bytes / 1048576).toFixed(1)} MB`
+    : '利用不可 / unavailable';
+}
+
+function openSettings() { show('settings'); settingsSync(); refreshCacheReadout(); sfxMove(); }
 function closeSettings() { show('select'); sfxBack(); }
 
 function backToSelect() {

@@ -2,9 +2,5 @@
 // Do not edit manually.
 
 window.MYUJIKKU_FILES = {
-  "songs": [
-    "songs/Daidaidaidai_Daisuki_na_Kimi_e_(TV_Size).mjk",
-    "songs/Looping_the_Rooms_feat_Hatsune_Miku.mjk",
-    "songs/YARARARA_feat_Kasane_Teto.mjk"
-  ]
+  "songs": []
 };

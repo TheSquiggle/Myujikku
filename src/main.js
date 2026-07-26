@@ -203,14 +203,20 @@ async function loadLibrary() {
   const renderSoon = throttled(refreshList, 150);
 
   // Cached beatmaps render with zero network at all — do them first, as one
-  // batch, so a return visit shows the full list instantly.
+  // batch, so a return visit shows the full list instantly. Their cover still
+  // needs loading (from cache when possible), so they go into `pending` too —
+  // skipping that step used to leave every previously-seen song stuck with
+  // its placeholder art forever, since nothing ever re-checked it.
   const uncached = [];
+  const pending = [];
   for (const item of sources) {
     if (seen.has(item.url)) continue;
     seen.add(item.url);
     const cached = getMeta(item.url, item.bytes);
     if (cached) {
-      state.library.push(makeEntry(item.url, cached.meta, cached.difficulties, null, item.bytes));
+      const entry = makeEntry(item.url, cached.meta, cached.difficulties, null, item.bytes);
+      state.library.push(entry);
+      pending.push({ entry, item, zip: null });
     } else {
       uncached.push(item);
     }
@@ -221,7 +227,6 @@ async function loadLibrary() {
   // Metadata is read over range requests — a few hundred KB each rather than
   // the whole archive — and fetched METADATA_CONCURRENCY at a time. Without a
   // known size (the files.js fallback) there's nothing to range against.
-  const pending = [];
   await pool(uncached, METADATA_CONCURRENCY, async item => {
     if (item.bytes) {
       const peek = await peekRemoteBeatmap(item.url, { size: item.bytes });

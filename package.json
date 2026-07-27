@@ -1,6 +1,6 @@
 {
   "name": "myujikku",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "ミュージック! — an anime 4K rhythm game in the spirit of osu!mania. Zero dependencies; all art and sound generated at runtime.",
   "main": "electron/main.js",
   "type": "commonjs",
@@ -59,6 +59,7 @@
       }
     ],
     "win": {
+      "icon": "electron/build/icon.ico",
       "target": [
         {
           "target": "nsis",

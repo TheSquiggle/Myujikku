@@ -3,7 +3,7 @@
 // separate "desktop" codebase to keep in sync with the web version.
 'use strict';
 
-const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog, nativeImage } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const { start } = require('../server.js');
@@ -15,6 +15,86 @@ autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 function log(...a) { console.log('[myujikku]', ...a); }
+
+const ICON_PATH = path.join(__dirname, 'build', 'icon.png');
+const appIcon = fsExists(ICON_PATH) ? nativeImage.createFromPath(ICON_PATH) : undefined;
+function fsExists(p) { try { require('fs').accessSync(p); return true; } catch { return false; } }
+
+function buildMenu() {
+  const isMac = process.platform === 'darwin';
+  const beatmapRepo = 'https://github.com/TheSquiggle/myujikku-beatmaps';
+
+  const template = [
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Editor',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => mainWindow?.loadURL(new URL('/editor.html', serverHandle.url).toString()),
+        },
+        {
+          label: 'Back to Song Select',
+          accelerator: 'CmdOrCtrl+Home',
+          click: () => mainWindow?.loadURL(serverHandle.url),
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+
+    // Registers real OS accelerators for cut/copy/paste/undo/select-all —
+    // these previously did nothing at all in the search box or settings
+    // inputs, since no Edit menu existed to bind them.
+    { role: 'editMenu' },
+
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { role: 'toggleDevTools', visible: !app.isPackaged },
+      ],
+    },
+
+    { role: 'windowMenu' },
+
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Beatmap Repository', click: () => shell.openExternal(beatmapRepo) },
+        { label: 'Report an Issue', click: () => shell.openExternal('https://github.com/TheSquiggle/Myujikku/issues') },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates…',
+          enabled: app.isPackaged,
+          click: () => autoUpdater.checkForUpdatesAndNotify()
+            .then(r => { if (!r) dialog.showMessageBox({ message: 'You are on the latest version.' }); })
+            .catch(err => dialog.showErrorBox('Update check failed', err.message)),
+        },
+        {
+          label: `About Myujikku (v${app.getVersion()})`,
+          click: () => dialog.showMessageBox({
+            title: 'Myujikku',
+            message: `Myujikku (ミュージック!)`,
+            detail: `Version ${app.getVersion()}\nAn anime 4K rhythm game in the spirit of osu!mania.`,
+          }),
+        },
+      ],
+    },
+  ];
+
+  return Menu.buildFromTemplate(template);
+}
 
 async function createWindow() {
   serverHandle = await start({
@@ -42,6 +122,11 @@ async function createWindow() {
     minWidth: 720,
     minHeight: 480,
     backgroundColor: '#0a0713',
+    icon: appIcon,
+    // The menu bar itself stays hidden by default — this is a full-window
+    // game, not a document editor — but a real menu underneath means Alt
+    // still reveals it and the accelerator keys it registers (Ctrl+C/V/A in
+    // the search box, Ctrl+E for the editor, etc.) work either way.
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -50,7 +135,7 @@ async function createWindow() {
     },
   });
 
-  Menu.setApplicationMenu(null);
+  Menu.setApplicationMenu(buildMenu());
 
   // The game already opens external links (editor, beatmap repo) with plain
   // <a> tags; keep those in the system browser instead of navigating the app.

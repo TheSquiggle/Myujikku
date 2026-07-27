@@ -139,13 +139,13 @@ body{
 
 .select-body{flex:1;display:flex;gap:20px;padding:20px;min-height:0}
 .song-panel{flex:1;min-width:0;min-height:0;position:relative}
-.song-list{height:100%;overflow-y:auto;overflow-x:hidden;padding:2px 8px 2px 2px;display:flex;flex-direction:column;gap:10px}
+.song-list{height:100%;overflow-y:auto;overflow-x:hidden;padding:2px 8px 2px 2px;display:flex;flex-direction:column;gap:14px}
 .song-list::-webkit-scrollbar{width:9px}
 .song-list::-webkit-scrollbar-thumb{background:var(--pink);border-radius:9px;border:2px solid var(--ink-line)}
 
 .song-card{
-  position:relative;display:flex;gap:18px;align-items:center;
-  padding:16px 20px 16px 28px;border-radius:14px;cursor:pointer;overflow:hidden;
+  position:relative;display:flex;flex-shrink:0;gap:18px;align-items:center;
+  padding:24px 20px 24px 28px;border-radius:14px;cursor:pointer;overflow:hidden;
   background:var(--panel);border:2.5px solid var(--panel-line);
   box-shadow:4px 4px 0 rgba(0,0,0,.4);
   transition:transform .16s var(--ease-bounce), border-color .14s, box-shadow .16s var(--ease-bounce);
@@ -165,7 +165,7 @@ body{
   box-shadow:8px 8px 0 var(--pink);
 }
 .song-card.sel::before{background:linear-gradient(180deg,var(--pink),var(--cyan));width:9px}
-.song-thumb{width:92px;height:69px;border-radius:10px;background:#241636 center/cover;flex:0 0 auto;border:2.5px solid var(--ink-line);box-shadow:3px 3px 0 rgba(0,0,0,.35)}
+.song-thumb{width:104px;height:82px;border-radius:10px;background:#241636 center/cover;flex:0 0 auto;border:2.5px solid var(--ink-line);box-shadow:3px 3px 0 rgba(0,0,0,.35)}
 .song-meta{min-width:0}
 .song-name{font-weight:800;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .song-sub{font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}

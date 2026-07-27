@@ -18,8 +18,11 @@ const argOf = (name, def) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : def;
 };
-const PORT = Number(argOf('--port', process.env.PORT || 8080));
-const SONGS_DIR = path.resolve(ROOT, argOf('--songs', 'songs'));
+
+// These stay as module-level state (not function locals) because the route
+// handlers close over them — buildIndex()/SONGS_DIR are shared regardless of
+// whether this file is run as a CLI or started() from the Electron shell.
+let SONGS_DIR = path.resolve(ROOT, argOf('--songs', 'songs'));
 const CACHE_DIR = path.join(ROOT, '.cache');
 
 /* ---------------- tiny zip reader (central directory) ---------------- */
@@ -231,9 +234,45 @@ const server = http.createServer((req, res) => {
   sendFile(req, res, target);
 });
 
-console.log('ミュージック! — building beatmap index…');
-console.log(`  songs: ${SONGS_DIR}`);
-buildIndex();
-server.listen(PORT, () => {
-  console.log(`\n♪ ミュージック! ready — http://localhost:${PORT}  (${INDEX.length} beatmaps)\n`);
-});
+/**
+ * Start the server. Used both by the CLI entry point below and by the
+ * Electron shell (electron/main.js), which starts it on an OS-assigned port
+ * (0) bound to localhost only, then loads that URL in a BrowserWindow —
+ * same server, same beatmap indexing, no code duplicated between the two.
+ *
+ * @param {{port?: number, songsDir?: string, host?: string, quiet?: boolean}} opts
+ * @returns {Promise<{server: import('http').Server, port: number, url: string, close: () => Promise<void>}>}
+ */
+function start(opts = {}) {
+  const host = opts.host || '127.0.0.1';
+  const port = opts.port ?? PORT;
+  if (opts.songsDir) SONGS_DIR = path.resolve(opts.songsDir);
+
+  if (!opts.quiet) {
+    console.log('ミュージック! — building beatmap index…');
+    console.log(`  songs: ${SONGS_DIR}`);
+  }
+  buildIndex();
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      const boundPort = server.address().port;
+      const url = `http://${host}:${boundPort}/`;
+      if (!opts.quiet) console.log(`\n♪ ミュージック! ready — ${url} (${INDEX.length} beatmaps)\n`);
+      resolve({
+        server, port: boundPort, url,
+        close: () => new Promise(r => server.close(r)),
+      });
+    });
+  });
+}
+
+module.exports = { start, buildIndex };
+
+// CLI entry point: `node server.js [--port 8080] [--songs path]`. Skipped
+// when this file is require()'d instead of run directly (the Electron shell).
+if (require.main === module) {
+  start({ port: Number(argOf('--port', process.env.PORT || 8080)) })
+    .catch(err => { console.error(`Failed to start: ${err.message}`); process.exit(1); });
+}

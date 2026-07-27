@@ -2,14 +2,86 @@
   "name": "myujikku",
   "version": "1.0.0",
   "description": "ミュージック! — an anime 4K rhythm game in the spirit of osu!mania. Zero dependencies; all art and sound generated at runtime.",
-  "main": "server.js",
+  "main": "electron/main.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js --port 8123"
+    "dev": "node server.js --port 8123",
+    "electron": "electron .",
+    "dist:win": "electron-builder --win --publish never",
+    "release:win": "electron-builder --win --publish always"
   },
-  "keywords": ["rhythm-game", "mania", "osu", "canvas", "web-audio", "anime"],
+  "keywords": [
+    "rhythm-game",
+    "mania",
+    "osu",
+    "canvas",
+    "web-audio",
+    "anime"
+  ],
   "license": "MIT",
   "private": true,
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.thesquiggle.myujikku",
+    "productName": "ミュージック!",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "electron/build"
+    },
+    "files": [
+      "index.html",
+      "editor.html",
+      "files.js",
+      "server.js",
+      "src/**/*",
+      "electron/**/*",
+      "!electron/build/**"
+    ],
+    "extraResources": [
+      {
+        "from": "songs",
+        "to": "songs",
+        "filter": [
+          "**/*.mjk",
+          "!*.osz"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "TheSquiggle",
+        "repo": "Myujikku"
+      }
+    ]
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
 }

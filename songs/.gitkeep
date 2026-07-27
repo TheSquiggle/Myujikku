@@ -1,0 +1,3 @@
+Drop .mjk files here for offline/local play (see files.js / generate_files.py in
+the repo root). This directory exists so the Electron build's extraResources
+step always has something to copy from — it's fine for it to stay empty.

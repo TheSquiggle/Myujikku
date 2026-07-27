@@ -1,0 +1,52 @@
+name: Release
+
+# Every version tag (v1.2.3) builds a Windows installer + a web bundle and
+# publishes both to the matching GitHub Release. electron-builder writes
+# app-update.yml into the installer pointing at this same repo's releases, so
+# electron-updater (electron/main.js) finds new versions here automatically —
+# there's nothing else to configure for auto-update to work.
+#
+# Mac/Linux: add more `os:`/target entries to the matrix below when ready;
+# everything else (versioning, publishing, the web bundle) stays the same.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:      # manual re-run from the Actions tab if a release needs redoing
+
+permissions:
+  contents: write         # to create/attach assets to the Release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build + publish the Windows installer
+        run: npm run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package the web bundle
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}"
+          $dest = "myujikku-web-$ver"
+          New-Item -ItemType Directory -Path $dest | Out-Null
+          Copy-Item index.html,editor.html,files.js,server.js,package.json,README.md $dest
+          Copy-Item src -Destination "$dest/src" -Recurse
+          Compress-Archive -Path $dest -DestinationPath "myujikku-web-$ver.zip"
+
+      - name: Attach the web bundle to the same release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: myujikku-web-*.zip

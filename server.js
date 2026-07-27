@@ -22,8 +22,14 @@ const argOf = (name, def) => {
 // These stay as module-level state (not function locals) because the route
 // handlers close over them — buildIndex()/SONGS_DIR are shared regardless of
 // whether this file is run as a CLI or started() from the Electron shell.
+//
+// CACHE_DIR defaults to sitting next to this file, which is only ever safe
+// for the CLI: in the packaged Electron app, server.js runs from inside
+// app.asar — a read-only virtual archive — and mkdir/writeFile into ROOT
+// throws ENOTDIR. The Electron shell must override cacheDir to a real
+// writable path (see electron/main.js, which uses app.getPath('userData')).
 let SONGS_DIR = path.resolve(ROOT, argOf('--songs', 'songs'));
-const CACHE_DIR = path.join(ROOT, '.cache');
+let CACHE_DIR = path.join(ROOT, '.cache');
 
 /* ---------------- tiny zip reader (central directory) ---------------- */
 
@@ -247,6 +253,7 @@ function start(opts = {}) {
   const host = opts.host || '127.0.0.1';
   const port = opts.port ?? PORT;
   if (opts.songsDir) SONGS_DIR = path.resolve(opts.songsDir);
+  if (opts.cacheDir) CACHE_DIR = path.resolve(opts.cacheDir);
 
   if (!opts.quiet) {
     console.log('ミュージック! — building beatmap index…');

@@ -3,7 +3,7 @@
 // separate "desktop" codebase to keep in sync with the web version.
 'use strict';
 
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, dialog } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const { start } = require('../server.js');
@@ -23,6 +23,14 @@ async function createWindow() {
     // Packaged app: songs/ sits next to the app resources. Dev run: same
     // relative path server.js already defaults to.
     songsDir: path.join(app.isPackaged ? process.resourcesPath : __dirname + '/..', 'songs'),
+    // server.js runs from inside app.asar when packaged — a read-only
+    // virtual archive — so its default "write .cache/ next to myself"
+    // behavior throws ENOTDIR there. userData is always a real, writable,
+    // per-user directory (e.g. %APPDATA%\myujikku on Windows). Named
+    // distinctly from Chromium's own "Cache" dir there — Windows' default
+    // case-insensitive filesystem would otherwise treat "cache" and "Cache"
+    // as the same folder.
+    cacheDir: path.join(app.getPath('userData'), 'beatmap-cache'),
     quiet: true,
   });
   const { url } = serverHandle;
@@ -55,8 +63,19 @@ async function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+// A startup failure here previously meant an unhandled rejection: the process
+// stayed alive (visible in Task Manager) but no window ever appeared, no
+// error shown, nothing to go on. Whatever fails next, this makes it visible
+// instead of silent, and quits instead of leaving a ghost process behind.
 app.whenReady().then(async () => {
-  await createWindow();
+  try {
+    await createWindow();
+  } catch (err) {
+    log('startup failed:', err.stack || err.message);
+    dialog.showErrorBox('ミュージック! failed to start', err.stack || err.message);
+    app.quit();
+    return;
+  }
 
   if (app.isPackaged) {
     // Checks the GitHub Release matching this build's version (electron-builder
@@ -66,7 +85,7 @@ app.whenReady().then(async () => {
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow().catch(err => log('re-activate failed:', err.message));
   });
 });
 

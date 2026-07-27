@@ -78,8 +78,12 @@ export class Game {
     this._t = -LEAD_IN;
     this.endsAt = (diff.length || 0) + END_PAD;
 
+    this._touchLanes = new Map();     // pointerId -> lane, for touch/pen input
+
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
+    this._onPointerDown = this._onPointerDown.bind(this);
+    this._onPointerUp = this._onPointerUp.bind(this);
     this._loop = this._loop.bind(this);
     this.resize = this.resize.bind(this);
   }
@@ -91,6 +95,9 @@ export class Game {
     window.addEventListener('resize', this.resize);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+    this.canvas.addEventListener('pointerdown', this._onPointerDown);
+    window.addEventListener('pointerup', this._onPointerUp);
+    window.addEventListener('pointercancel', this._onPointerUp);
     this.running = true;
     this._clockStart = performance.now();
     this._t = -LEAD_IN;
@@ -104,6 +111,9 @@ export class Game {
     window.removeEventListener('resize', this.resize);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+    window.removeEventListener('pointerup', this._onPointerUp);
+    window.removeEventListener('pointercancel', this._onPointerUp);
     stopSong();
   }
 
@@ -114,6 +124,7 @@ export class Game {
     // Forget which keys were down: the keyup usually never arrives while paused,
     // and a lane stuck "pressed" would swallow every note in it after resuming.
     this.pressed.fill(false);
+    this._touchLanes.clear();
     stopSong();
   }
 
@@ -178,6 +189,31 @@ export class Game {
     const lane = settings.keys.indexOf(e.code);
     if (lane < 0 || lane >= this.keys) return;
     if (settings.autoplay) return;
+    this._release(lane);
+  }
+
+  /** Which lane an x-coordinate (relative to the canvas) falls in, or -1. */
+  _laneAtX(x) {
+    const lane = Math.floor((x - this.fieldX) / this.laneW);
+    return lane >= 0 && lane < this.keys ? lane : -1;
+  }
+
+  _onPointerDown(e) {
+    if (this.paused || settings.autoplay) return;
+    // Taps below the judgement line are for the pause button / HUD, not lanes.
+    const rect = this.canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const lane = this._laneAtX(x);
+    if (lane < 0) return;
+    e.preventDefault();
+    this._touchLanes.set(e.pointerId, lane);
+    this._press(lane);
+  }
+
+  _onPointerUp(e) {
+    const lane = this._touchLanes.get(e.pointerId);
+    this._touchLanes.delete(e.pointerId);
+    if (lane === undefined || settings.autoplay) return;
     this._release(lane);
   }
 

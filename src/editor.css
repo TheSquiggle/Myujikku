@@ -74,7 +74,7 @@ kbd{
 
 /* ---------- stage ---------- */
 .ed-stage{position:relative;min-width:0;overflow:hidden}
-#ed-canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;display:block}
+#ed-canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;display:block;touch-action:none}
 .ed-empty{
   position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:14px;text-align:center;color:var(--muted);background:rgba(7,4,15,.9);
@@ -123,4 +123,20 @@ kbd{
 @media (max-width:1100px){
   .ed-main{grid-template-columns:250px 1fr}
   .ed-transport{flex-wrap:wrap}
+}
+
+/* Phone: the note grid needs real width to be usable, so the rail becomes a
+   capped-height, scrollable strip above it instead of a fixed side column. */
+@media (max-width:680px){
+  .ed-top{flex-wrap:wrap;gap:8px;padding:8px 10px}
+  .ed-file-ops{gap:6px}
+  .ed-file-ops .ghost-btn,.ed-file-ops a{padding:7px 10px;font-size:11px}
+  .ed-main{grid-template-columns:1fr;grid-template-rows:38vh 1fr}
+  .ed-rail{border-right:0;border-bottom:1px solid var(--panel-line);max-height:38vh}
+  .ed-transport{padding:8px 10px;gap:8px}
+  .tr-field input[type=range]{width:60px}
+}
+@media (pointer:coarse){
+  .mini-btn,.ghost-btn,.big-btn{min-height:38px}
+  .diff-item,.ed-diff{min-height:40px}
 }

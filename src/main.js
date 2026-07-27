@@ -851,6 +851,7 @@ $('#screen-boot').addEventListener('click', boot);
   $('#btn-play').addEventListener('click', startPlay);
   $('#search').addEventListener('input', () => { state.songIndex = 0; refreshList(); });
 
+  $('#btn-mobile-pause').addEventListener('click', () => state.game?.hooks.onPause?.());
   $('#btn-resume').addEventListener('click', () => state.game?.hooks.onResume?.());
   $('#btn-restart').addEventListener('click', () => state.game?.hooks.onRestart?.());
   $('#btn-quit').addEventListener('click', quitGame);

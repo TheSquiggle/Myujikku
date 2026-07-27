@@ -594,7 +594,7 @@ function bindCanvas() {
     if (hit) deleteNotes([hit.note]);
   });
 
-  canvas.addEventListener('mousedown', e => {
+  canvas.addEventListener('pointerdown', e => {
     if (!ed.chart || e.button !== 0) return;
     const x = e.offsetX, y = e.offsetY;
 
@@ -628,7 +628,7 @@ function bindCanvas() {
     ed.drag = { mode: 'create', lane, t: snapTime(timeFor(y)), end: null };
   });
 
-  window.addEventListener('mousemove', e => {
+  window.addEventListener('pointermove', e => {
     const d = ed.drag;
     if (!d) return;
     const rect = canvas.getBoundingClientRect();
@@ -661,7 +661,7 @@ function bindCanvas() {
     }
   });
 
-  window.addEventListener('mouseup', () => {
+  window.addEventListener('pointerup', () => {
     const d = ed.drag;
     ed.drag = null;
     if (!d) return;

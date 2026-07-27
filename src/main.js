@@ -2,11 +2,12 @@
 
 import { settings, saveSettings, resetSettings, getBest, submitScore } from './store.js';
 import {
-  audio, initAudio, resumeAudio, setMusicVolume, setSfxVolume, decodeSong,
-  stopSong, sfxMove, sfxConfirm, sfxBack, sfxApplause,
+  audio, initAudio, resumeAudio, setMusicVolume, setSfxVolume, setPreviewVolume, decodeSong,
+  stopSong, playPreview, stopPreview, sfxMove, sfxConfirm, sfxBack, sfxApplause,
 } from './audio.js';
 import { loadBeatmap, peekBeatmap, starColor, formatTime } from './chart.js';
 import { BEATMAP_REPO, listRepoBeatmaps, peekRemoteBeatmap } from './beatmaps.js';
+import { openRemoteZip, readZip } from './zip.js';
 import { getMeta, putMeta, flushMeta, getBlob, putBlob, cacheSize, clearCache } from './cache.js';
 import { logoSVG, generateCover, JUDGE_STYLE } from './skin.js';
 import { Game, JUDGEMENTS } from './game.js';
@@ -129,6 +130,8 @@ function makeEntry(url, meta, difficulties, bgURL, bytes = 0) {
     id: url,
     bytes,
     backgroundName: meta.background || 'BG.jpg',
+    audioName: meta.audio || 'audio.mp3',
+    previewTime: Number(meta.previewTime) || 0,
     title: meta.titleUnicode || meta.title || url.split('/').pop(),
     titleRoman: meta.title || '',
     artist: meta.artistUnicode || meta.artist || 'Unknown',
@@ -365,6 +368,79 @@ function selectSong(i, quiet) {
   setBackground({ image: s.cover });
   renderDiffs();
   if (!quiet) sfxMove();
+  queuePreview(s);
+}
+
+/* ================= song preview ================= */
+
+let previewTimer = null;
+let previewToken = 0;
+
+/** Debounced so arrow-key-mashing through the list doesn't fire a fetch per song. */
+function queuePreview(song) {
+  clearTimeout(previewTimer);
+  const mine = ++previewToken;
+  stopPreview();
+  if (!settings.music) return;              // music volume 0 = previews off too
+  previewTimer = setTimeout(() => startPreviewFor(song, mine), 260);
+}
+
+function cancelPreview() {
+  clearTimeout(previewTimer);
+  previewToken++;
+  stopPreview();
+}
+
+async function startPreviewFor(song, token) {
+  try {
+    let buf;
+    if (song.source === 'local') {
+      buf = song.buffer;
+    } else {
+      // Same trick as loadCover: pull just the audio entry out of the remote
+      // zip over range requests, not the whole archive.
+      const cachedArchive = await getBlob('archive', song.url, song.bytes);
+      if (cachedArchive) {
+        buf = cachedArchive;
+      } else if (song.bytes) {
+        const zip = await openRemoteZip(song.url, song.bytes);
+        const bytes = await zip.read(song.audioName) || await zip.read('audio.mp3');
+        if (!bytes) return;
+        buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      } else {
+        const res = await fetch(song.url);
+        if (!res.ok) return;
+        buf = await res.arrayBuffer();
+      }
+    }
+    if (token !== previewToken) return;      // selection moved on while we were fetching
+
+    initAudio();
+    // `buf` may already be a bare audio file (remote fetch) or a whole .mjk
+    // archive (local drag-drop, or an already-cached full download) — handle both.
+    const decoded = await decodePreviewBuffer(await extractAudioIfArchive(buf));
+    if (token !== previewToken) return;
+    playPreview(decoded, song.previewTime || decoded.duration * 1000 * 0.25);
+  } catch (err) {
+    console.warn(`Preview unavailable for ${song.title}`, err);
+  }
+}
+
+/** `buf` may be a raw audio file already, or a whole .mjk archive (local imports). */
+async function extractAudioIfArchive(buf) {
+  try {
+    const files = await readZip(buf.slice ? buf.slice(0) : buf);
+    if (files.has('audio.mp3')) {
+      const b = files.get('audio.mp3');
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+    }
+  } catch { /* not a zip — it's a plain audio file, fall through */ }
+  return buf;
+}
+
+async function decodePreviewBuffer(bufOrPromise) {
+  const buf = await bufOrPromise;
+  return audio.ctx.decodeAudioData(buf.slice(0));
 }
 
 function renderDiffs() {
@@ -442,6 +518,7 @@ async function startPlay() {
   const diffMeta = song.difficulties[state.diffIndex];
   if (!diffMeta) return;
 
+  cancelPreview();
   sfxConfirm();
   show('loading');
   const setP = (p, label) => {
@@ -543,6 +620,7 @@ function quitGame() {
   setBackground({ image: s?.cover });
   show('select');
   sfxBack();
+  if (s) queuePreview(s);
 }
 
 /* ================= results ================= */
@@ -624,6 +702,7 @@ function bindSettings() {
     $('#s-fx').checked = settings.fx;
     $('#s-autoplay').checked = settings.autoplay;
     setMusicVolume(settings.music / 100);
+    setPreviewVolume(settings.music / 100);
     setSfxVolume(settings.hit / 100);
     applyDim();
     renderKeybinds();
@@ -633,7 +712,7 @@ function bindSettings() {
     $(sel).addEventListener('input', e => {
       settings[key] = Number(e.target.value);
       $(label).textContent = fmt(settings[key]);
-      if (key === 'music') setMusicVolume(settings.music / 100);
+      if (key === 'music') { setMusicVolume(settings.music / 100); setPreviewVolume(settings.music / 100); if (!settings.music) cancelPreview(); }
       if (key === 'hit') setSfxVolume(settings.hit / 100);
       if (key === 'dim') applyDim();
       if (key === 'speed') state.game?.resize();
@@ -805,6 +884,7 @@ function backToSelect() {
   show('select');
   renderDiffs();
   sfxBack();
+  if (s) queuePreview(s);
 }
 
 function retry() {
@@ -824,6 +904,7 @@ async function boot() {
   await resumeAudio();
 
   setMusicVolume(settings.music / 100);
+  setPreviewVolume(settings.music / 100);
   setSfxVolume(settings.hit / 100);
 
   sfxConfirm();

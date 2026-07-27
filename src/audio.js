@@ -5,6 +5,7 @@ export const audio = {
   ctx: null,
   musicGain: null,
   sfxGain: null,
+  previewGain: null,
   buffer: null,
   source: null,
   _startCtxTime: 0,
@@ -13,6 +14,7 @@ export const audio = {
   playing: false,
   _hitBuf: null,
   _clapBuf: null,
+  _previewSource: null,
 };
 
 export function initAudio() {
@@ -21,8 +23,11 @@ export function initAudio() {
   audio.ctx = new AC({ latencyHint: 'interactive' });
   audio.musicGain = audio.ctx.createGain();
   audio.sfxGain = audio.ctx.createGain();
+  audio.previewGain = audio.ctx.createGain();
+  audio.previewGain.gain.value = 0;
   audio.musicGain.connect(audio.ctx.destination);
   audio.sfxGain.connect(audio.ctx.destination);
+  audio.previewGain.connect(audio.ctx.destination);
   audio._hitBuf = buildHitBuffer(audio.ctx);
   audio._clapBuf = buildClapBuffer(audio.ctx);
   return audio.ctx;
@@ -35,6 +40,7 @@ export function resumeAudio() {
 
 export function setMusicVolume(v) { if (audio.musicGain) audio.musicGain.gain.value = v; }
 export function setSfxVolume(v) { if (audio.sfxGain) audio.sfxGain.gain.value = v; }
+export function setPreviewVolume(v) { audio._previewTarget = v; }
 
 export async function decodeSong(arrayBuffer) {
   initAudio();
@@ -68,6 +74,61 @@ export function stopSong() {
     audio.source = null;
   }
   audio.playing = false;
+}
+
+const PREVIEW_LOOP_MS = 18000;   // loop window length for the song-select preview
+const PREVIEW_FADE = 0.35;       // seconds
+
+/**
+ * Play a short looping preview of `buffer`, starting at `startMs` (typically
+ * the beatmap's own previewTime) and looping over the next ~18s. Used on the
+ * song-select screen — separate gain/source from the gameplay music path so
+ * it can't interfere with an actual play session.
+ */
+export function playPreview(buffer, startMs = 0) {
+  if (!audio.ctx || !buffer) return;
+  stopPreview(0);
+
+  const dur = buffer.duration;
+  const start = Math.min(Math.max(0, startMs / 1000), Math.max(0, dur - 0.5));
+  const loopEnd = Math.min(dur, start + PREVIEW_LOOP_MS / 1000);
+
+  const src = audio.ctx.createBufferSource();
+  src.buffer = buffer;
+  if (loopEnd > start + 1) {
+    src.loop = true;
+    src.loopStart = start;
+    src.loopEnd = loopEnd;
+  }
+  src.connect(audio.previewGain);
+
+  const g = audio.previewGain.gain;
+  const now = audio.ctx.currentTime;
+  g.cancelScheduledValues(now);
+  g.setValueAtTime(0, now);
+  g.linearRampToValueAtTime(audio._previewTarget ?? 0.7, now + PREVIEW_FADE);
+
+  src.start(0, start);
+  audio._previewSource = src;
+}
+
+/** Fade the preview out over `fadeSec` (0 = immediate) and stop it. */
+export function stopPreview(fadeSec = PREVIEW_FADE) {
+  const src = audio._previewSource;
+  if (!src) return;
+  audio._previewSource = null;
+
+  if (!audio.ctx || fadeSec <= 0) {
+    try { src.stop(); } catch { /* already stopped */ }
+    src.disconnect();
+    return;
+  }
+  const g = audio.previewGain.gain;
+  const now = audio.ctx.currentTime;
+  g.cancelScheduledValues(now);
+  g.setValueAtTime(g.value, now);
+  g.linearRampToValueAtTime(0, now + fadeSec);
+  setTimeout(() => { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); }, fadeSec * 1000 + 30);
 }
 
 /** Current position in the song, in milliseconds. */

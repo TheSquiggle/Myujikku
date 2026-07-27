@@ -72,7 +72,7 @@ app.whenReady().then(async () => {
     await createWindow();
   } catch (err) {
     log('startup failed:', err.stack || err.message);
-    dialog.showErrorBox('ミュージック! failed to start', err.stack || err.message);
+    dialog.showErrorBox('Myujikku failed to start', err.stack || err.message);
     app.quit();
     return;
   }

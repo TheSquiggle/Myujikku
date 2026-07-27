@@ -1,6 +1,6 @@
 {
   "name": "myujikku",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "ミュージック! — an anime 4K rhythm game in the spirit of osu!mania. Zero dependencies; all art and sound generated at runtime.",
   "main": "electron/main.js",
   "type": "commonjs",
@@ -33,7 +33,7 @@
   },
   "build": {
     "appId": "com.thesquiggle.myujikku",
-    "productName": "ミュージック!",
+    "productName": "Myujikku",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release",

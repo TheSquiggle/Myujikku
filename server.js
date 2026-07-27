@@ -169,6 +169,14 @@ function sendFile(req, res, filePath) {
   if (stat.isDirectory()) return send(res, 404, 'Not found');
 
   const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+  // Source files change on every deploy and must be revalidated every load,
+  // or a browser can sit on a stale style.css/main.js indefinitely with no
+  // visible sign anything is wrong. Beatmaps/media are immutable once
+  // published (content-addressed by filename), so those are fine to cache.
+  const ext = path.extname(filePath).toLowerCase();
+  const cacheControl = ['.html', '.css', '.js', '.json'].includes(ext)
+    ? 'no-cache'
+    : 'public, max-age=604800';
   const range = req.headers.range;
   if (range) {
     const m = /bytes=(\d*)-(\d*)/.exec(range);
@@ -181,11 +189,15 @@ function sendFile(req, res, filePath) {
         'Content-Length': end - start + 1,
         'Content-Range': `bytes ${start}-${end}/${stat.size}`,
         'Accept-Ranges': 'bytes',
+        'Cache-Control': cacheControl,
       });
       return fs.createReadStream(filePath, { start, end }).pipe(res);
     }
   }
-  res.writeHead(200, { 'Content-Type': type, 'Content-Length': stat.size, 'Accept-Ranges': 'bytes' });
+  res.writeHead(200, {
+    'Content-Type': type, 'Content-Length': stat.size, 'Accept-Ranges': 'bytes',
+    'Cache-Control': cacheControl,
+  });
   fs.createReadStream(filePath).pipe(res);
 }
 
